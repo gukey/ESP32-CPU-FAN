@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# PyInstaller temporary output
+build/
+dist/
+
+# Editor/OS files
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini
+
+# Local logs
+*.log
