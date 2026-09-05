@@ -24,8 +24,8 @@
 | `2.py` | Windows 上位机源码 |
 | `CPU_fan.exe` | 已编译的 Windows 上位机 |
 | `com.ini` | 串口及重连参数 |
-| `LibreHardwareMonitorLib.dll` | 硬件温度读取库 |
-| `HidSharp.dll` | LibreHardwareMonitor 依赖 |
+| `LibreHardwareMonitorLib.dll` | 硬件温度读取库，当前版本 0.9.6 |
+| `HidSharp.dll` | LibreHardwareMonitor 依赖，当前版本 2.6.4 |
 | `Only.ico` | 上位机图标 |
 | `fan-打包exe 配置文件/` | 已打包程序、DLL 与配置文件的完整可运行目录 |
 | `CPU_fan-可运行版/` | 整理后的 Windows 单文件可运行版本，DLL 已内置 |
@@ -62,7 +62,9 @@ CPU_fan.exe
 com.ini（可选）
 ```
 
-双击 `CPU_fan.exe` 后程序在系统托盘运行；右键托盘图标可查看温度、连接状态或退出。`com.ini` 默认优先使用 `COM5`；COM5 不可用或连接后收不到 ESP32 的 `ACK` 时，程序会暂时跳过错误端口，并按设备特征、蓝牙端口和其他可用 COM 口的顺序继续寻找。
+双击 `CPU_fan.exe` 后程序在系统托盘运行；右键托盘图标可查看温度、连接状态或退出。`com.ini` 默认优先使用 `COM5`；COM5 无法打开、写入超时或连接后收不到 ESP32 的 `ACK` 时，程序会暂时跳过错误端口，并按设备特征、蓝牙端口和其他可用 COM 口的顺序继续寻找。
+
+程序会在 EXE 所在目录写入 `CPU_fan.log`，可用于查看端口尝试、自动切换、ACK 和温度读取状态。
 
 首次运行会自动添加名为 `ESP32FanController` 的当前用户开机启动项，无需管理员权限。程序不会重复添加；如果移动了 EXE，再从新位置手动运行一次，启动项会自动覆盖为新路径，并清理其他名称下指向旧 `CPU_fan.exe` 的重复启动项。
 
@@ -101,13 +103,13 @@ python -m pip install -r requirements.txt
 python .\2.py
 ```
 
-两个 DLL 需要与 `2.py` 位于同一目录。
+直接运行源码时，LibreHardwareMonitor 及其配套 DLL 需要与 `2.py` 位于同一目录。仓库已包含 LibreHardwareMonitor 0.9.6 官方发布包所需的运行库。
 
 ## 编译 EXE
 
 ```powershell
 python -m pip install -r requirements-build.txt
-pyinstaller --noconfirm --clean --onefile --windowed --name CPU_fan --icon Only.ico --add-binary "LibreHardwareMonitorLib.dll;." --add-binary "HidSharp.dll;." 2.py
+pyinstaller 2.spec --noconfirm --clean
 ```
 
 编译结果位于 `dist/CPU_fan.exe`。发布时请同时提供 `com.ini`；仓库根目录已经附带可直接使用的编译版本。

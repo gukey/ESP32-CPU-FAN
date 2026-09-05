@@ -54,6 +54,7 @@ DEFAULT_TARGET_DESCRIPTION_CONTAINS = ""
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else SCRIPT_DIR
 CONFIG_FILE = os.path.join(APP_DIR, "com.ini")
+LOG_FILE = os.path.join(APP_DIR, "CPU_fan.log")
 STARTUP_REGISTRY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 STARTUP_VALUE_NAME = "ESP32FanController"
 MIN_VALID_TEMP = 0.0
@@ -64,14 +65,22 @@ TEMP_COLORS = {
     "high": (255, 45, 45),
 }
 _DEFAULT_FONT = ImageFont.load_default()
+_LOG_LOCK = threading.Lock()
 
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
 
 def log(message: str) -> None:
+    formatted = f"[{datetime.now().strftime('%H:%M:%S')}] {message}"
     try:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}")
+        print(formatted)
+    except OSError:
+        pass
+    try:
+        with _LOG_LOCK:
+            with open(LOG_FILE, "a", encoding="utf-8") as log_file:
+                log_file.write(formatted + "\n")
     except OSError:
         pass
 
@@ -472,6 +481,7 @@ class SerialBridge:
             return True
         except Exception as exc:
             log(f"Serial write failed: {exc}")
+            self.mark_port_temporarily_failed(self.port)
             self.disconnect()
             return False
 
