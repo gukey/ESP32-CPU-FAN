@@ -50,8 +50,9 @@ DEFAULT_PORT_SCAN_KEYWORDS = "bluetooth,蓝牙,bthenum"
 DEFAULT_TARGET_HWID_CONTAINS = ""
 DEFAULT_TARGET_DESCRIPTION_CONTAINS = ""
 
-CONFIG_FILE = "com.ini"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+APP_DIR = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else SCRIPT_DIR
+CONFIG_FILE = os.path.join(APP_DIR, "com.ini")
 MIN_VALID_TEMP = 0.0
 MAX_VALID_TEMP = 120.0
 TEMP_COLORS = {
@@ -104,7 +105,7 @@ def get_serial_ports() -> List[PortInfo]:
     return ports
 
 
-def load_config(path: str) -> Tuple[str, int, float, float, float, float, float, int, List[str], str, str]:
+def load_config(path: str) -> Tuple[str, int, float, float, float, float, float, float, int, List[str], str, str]:
     if not os.path.exists(path):
         config = configparser.ConfigParser()
         config["SERIAL"] = {"port": DEFAULT_COM_PORT, "baudrate": str(DEFAULT_BAUDRATE)}
@@ -126,16 +127,34 @@ def load_config(path: str) -> Tuple[str, int, float, float, float, float, float,
             config.write(f)
 
     config = configparser.ConfigParser()
-    config.read(path, encoding="utf-8")
+    try:
+        config.read(path, encoding="utf-8")
+    except (configparser.Error, OSError) as exc:
+        log(f"Config read failed, using defaults where needed: {exc}")
+
+    def safe_getint(section: str, option: str, fallback: int) -> int:
+        try:
+            return config.getint(section, option, fallback=fallback)
+        except (ValueError, configparser.Error):
+            log(f"Invalid config value {section}.{option}; using {fallback}.")
+            return fallback
+
+    def safe_getfloat(section: str, option: str, fallback: float) -> float:
+        try:
+            return config.getfloat(section, option, fallback=fallback)
+        except (ValueError, configparser.Error):
+            log(f"Invalid config value {section}.{option}; using {fallback}.")
+            return fallback
+
     port = normalize_port_name(config.get("SERIAL", "port", fallback=DEFAULT_COM_PORT))
-    baudrate = config.getint("SERIAL", "baudrate", fallback=DEFAULT_BAUDRATE)
-    update_interval = config.getfloat("SETTINGS", "update_interval", fallback=DEFAULT_UPDATE_INTERVAL)
-    reconnect_interval = config.getfloat("SETTINGS", "reconnect_interval", fallback=DEFAULT_RECONNECT_INTERVAL)
-    wake_gap_seconds = config.getfloat("SETTINGS", "wake_gap_seconds", fallback=DEFAULT_WAKE_GAP_SECONDS)
-    wake_recovery_seconds = config.getfloat("SETTINGS", "wake_recovery_seconds", fallback=DEFAULT_WAKE_RECOVERY_SECONDS)
-    ack_timeout_seconds = config.getfloat("SETTINGS", "ack_timeout_seconds", fallback=DEFAULT_ACK_TIMEOUT_SECONDS)
-    tray_update_interval = config.getfloat("SETTINGS", "tray_update_interval", fallback=DEFAULT_TRAY_UPDATE_INTERVAL)
-    history_size = max(10, config.getint("SETTINGS", "history_size", fallback=DEFAULT_HISTORY_SIZE))
+    baudrate = max(1, safe_getint("SERIAL", "baudrate", DEFAULT_BAUDRATE))
+    update_interval = max(0.2, safe_getfloat("SETTINGS", "update_interval", DEFAULT_UPDATE_INTERVAL))
+    reconnect_interval = max(0.5, safe_getfloat("SETTINGS", "reconnect_interval", DEFAULT_RECONNECT_INTERVAL))
+    wake_gap_seconds = max(2.0, safe_getfloat("SETTINGS", "wake_gap_seconds", DEFAULT_WAKE_GAP_SECONDS))
+    wake_recovery_seconds = safe_getfloat("SETTINGS", "wake_recovery_seconds", DEFAULT_WAKE_RECOVERY_SECONDS)
+    ack_timeout_seconds = safe_getfloat("SETTINGS", "ack_timeout_seconds", DEFAULT_ACK_TIMEOUT_SECONDS)
+    tray_update_interval = max(0.2, safe_getfloat("SETTINGS", "tray_update_interval", DEFAULT_TRAY_UPDATE_INTERVAL))
+    history_size = max(10, safe_getint("SETTINGS", "history_size", DEFAULT_HISTORY_SIZE))
     port_scan_keywords = [
         item.strip().lower()
         for item in config.get("DISCOVERY", "port_scan_keywords", fallback=DEFAULT_PORT_SCAN_KEYWORDS).split(",")
@@ -151,6 +170,7 @@ def load_config(path: str) -> Tuple[str, int, float, float, float, float, float,
         wake_gap_seconds,
         max(5.0, wake_recovery_seconds),
         max(4.0, ack_timeout_seconds),
+        tray_update_interval,
         history_size,
         port_scan_keywords,
         target_hwid_contains,
@@ -260,6 +280,7 @@ class SerialBridge:
         self.conn: Optional[serial.Serial] = None
         self.last_tx_monotonic = 0.0
         self.last_rx_monotonic = 0.0
+        self.pending_since_monotonic = 0.0
 
     @property
     def connected(self) -> bool:
@@ -275,6 +296,7 @@ class SerialBridge:
         self.conn = None
         self.last_tx_monotonic = 0.0
         self.last_rx_monotonic = 0.0
+        self.pending_since_monotonic = 0.0
 
     def is_auto_mode(self) -> bool:
         return self.preferred_port in {"", "AUTO"}
@@ -327,6 +349,7 @@ class SerialBridge:
                 self.conn.reset_output_buffer()
                 self.port = candidate.device
                 self.last_rx_monotonic = time.monotonic()
+                self.pending_since_monotonic = 0.0
                 log(f"Serial connected: {candidate.device}")
                 return True
             except Exception as exc:
@@ -340,8 +363,10 @@ class SerialBridge:
         try:
             while self.conn.in_waiting > 0:
                 line = self.conn.readline().decode("utf-8", errors="ignore").strip()
-                self.last_rx_monotonic = time.monotonic()
                 if line:
+                    self.last_rx_monotonic = time.monotonic()
+                    if line.upper() == "ACK":
+                        self.pending_since_monotonic = 0.0
                     log(f"Serial RX: {line}")
         except Exception as exc:
             log(f"Serial read failed: {exc}")
@@ -352,11 +377,10 @@ class SerialBridge:
             return False
         self.poll_incoming()
         now = time.monotonic()
-        if self.last_tx_monotonic and now - self.last_tx_monotonic >= self.ack_timeout_seconds:
-            if self.last_rx_monotonic < self.last_tx_monotonic:
-                log("Serial link stale: forcing reconnect.")
-                self.disconnect()
-                return False
+        if self.pending_since_monotonic and now - self.pending_since_monotonic >= self.ack_timeout_seconds:
+            log("Serial link stale: forcing reconnect.")
+            self.disconnect()
+            return False
         return self.connected
 
     def send_temperatures(self, cpu: Optional[float], gpu: Optional[float]) -> bool:
@@ -373,6 +397,8 @@ class SerialBridge:
             self.conn.write(payload.encode("ascii"))
             self.conn.flush()
             self.last_tx_monotonic = time.monotonic()
+            if not self.pending_since_monotonic:
+                self.pending_since_monotonic = self.last_tx_monotonic
             return True
         except Exception as exc:
             log(f"Serial write failed: {exc}")
@@ -390,6 +416,7 @@ class FanControllerApp:
             self.wake_gap_seconds,
             self.wake_recovery_seconds,
             self.ack_timeout_seconds,
+            self.tray_update_interval,
             history_size,
             self.port_scan_keywords,
             self.target_hwid_contains,
@@ -464,7 +491,7 @@ class FanControllerApp:
         if not self.tray_icon:
             return
         now = time.monotonic()
-        if now - self.last_tray_update < DEFAULT_TRAY_UPDATE_INTERVAL:
+        if now - self.last_tray_update < self.tray_update_interval:
             return
         self.last_tray_update = now
         self.tray_icon.icon = self.build_wave_icon()

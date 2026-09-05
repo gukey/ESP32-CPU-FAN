@@ -4,7 +4,10 @@
 a = Analysis(
     ['2.py'],
     pathex=[],
-    binaries=[],
+    binaries=[
+        ('LibreHardwareMonitorLib.dll', '.'),
+        ('HidSharp.dll', '.'),
+    ],
     datas=[],
     hiddenimports=[],
     hookspath=[],
@@ -22,7 +25,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='2',
+    name='CPU_fan',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

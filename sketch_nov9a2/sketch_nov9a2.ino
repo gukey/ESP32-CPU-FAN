@@ -3,6 +3,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <EEPROM.h>
+#include <esp_arduino_version.h>
 
 // 全局变量声明
 unsigned long lastConnectedTime = 0;
@@ -48,13 +49,11 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 // 传感器数据
 float cpuValue = 0.0;
 float gpuValue = 0.0;
-float maxCpuValue = 0.0;
-float maxGpuValue = 0.0;
 float maxValue = 50;
 
 // 计时变量
-unsigned long lastUpdateTime = 0;
-const unsigned long updateInterval = 30000;
+unsigned long lastDisplayUpdateTime = 0;
+const unsigned long displayUpdateInterval = 200;
 
 // 按钮相关
 const int buttonPins[] = {12, 13, 14, 15, 16};
@@ -65,6 +64,34 @@ bool enableDisplay = true;
 
 BluetoothSerial SerialBT;
 const char* modechar;
+
+void writeFanDuty(int percent) {
+  int duty = map(constrain(percent, 0, 100), 0, 100, 0, 255);
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcWrite(gpioPin, duty);
+#else
+  ledcWrite(ledChannel, duty);
+#endif
+}
+
+void configurePwm() {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcAttach(gpioPin, frequency * 100, resolution);
+#else
+  ledcSetup(ledChannel, frequency * 100, resolution);
+  ledcAttachPin(gpioPin, ledChannel);
+#endif
+  writeFanDuty(dutyCycle);
+}
+
+void applyPwmFrequency() {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcChangeFrequency(gpioPin, frequency * 100, resolution);
+#else
+  ledcSetup(ledChannel, frequency * 100, resolution);
+#endif
+  writeFanDuty(dutyCycle);
+}
 
 void setup() {
   Serial.begin(115200);
@@ -91,9 +118,7 @@ void setup() {
   
   // PWM初始化
   SerialBT.setTimeout(80);
-  ledcSetup(ledChannel, frequency*100, resolution);
-  ledcAttachPin(gpioPin, ledChannel);
-  ledcWrite(ledChannel, map(dutyCycle, 0, 100, 0, 255));
+  configurePwm();
 
   // 按钮初始化
   for(int i=0; i<5; i++){
@@ -129,9 +154,6 @@ void loop() {
         lastDataReceivedTime = currentMillis; // 重置数据接收时间
         isSleeping = false;
         sleepCountdown = 0;
-        // 修改：仅重置最大值，保留当前值
-        maxCpuValue = 0;
-        maxGpuValue = 0;
         updatePWM(); // 立即更新风扇速度
         updateDisplay();
       }
@@ -158,7 +180,7 @@ void loop() {
       if(sleepCountdown <= 0){
         isSleeping = true;
         dutyCycle = 0;
-        ledcWrite(ledChannel, 0);
+        writeFanDuty(0);
       }
     }
   }
@@ -186,30 +208,31 @@ void loop() {
     }
   }
 
-  // 定期更新
-  if(currentMillis - lastUpdateTime >= updateInterval){
-    maxValue = max(maxCpuValue, maxGpuValue);
-    updatePWM();
-    lastUpdateTime = currentMillis;
-  }
-
   updateDisplay();
 }
 
 void parseBluetoothData(const String& data) {
-  if(data.length() == 0){
+  if(data.length() <= 3){
+    return;
+  }
+  const char* valueText = data.c_str() + 3;
+  char* parseEnd = nullptr;
+  float value = strtof(valueText, &parseEnd);
+  if(parseEnd == valueText || *parseEnd != '\0' || value < 0.0 || value > 120.0){
+    return;
+  }
+  bool validData = false;
+  if(data.startsWith("CPU")){
+    cpuValue = value;
+    validData = true;
+  } else if(data.startsWith("GPU")){
+    gpuValue = value;
+    validData = true;
+  }
+  if(!validData){
     return;
   }
   lastDataReceivedTime = millis();
-  if(data.startsWith("CPU")){
-    float value = data.substring(3).toFloat();
-    if(value > maxCpuValue) maxCpuValue = value;
-    cpuValue = value;
-  } else if(data.startsWith("GPU")){
-    float value = data.substring(3).toFloat();
-    if(value > maxGpuValue) maxGpuValue = value;
-    gpuValue = value;
-  }
   
     // 强制唤醒设备
   isSleeping = false;
@@ -270,22 +293,22 @@ void handleButtonPress(int buttonIndex) {
     case 1: 
       mode = 4;
       dutyCycle = min(dutyCycle+1, 100);
-      ledcWrite(ledChannel, map(dutyCycle, 0, 100, 0, 255));
+      writeFanDuty(dutyCycle);
       break;
     case 2: 
       mode = 4;
       dutyCycle = max(dutyCycle-1, 0);
-      ledcWrite(ledChannel, map(dutyCycle, 0, 100, 0, 255));
+      writeFanDuty(dutyCycle);
       break;
     case 3: 
       mode = 4;
       dutyCycle = min(dutyCycle+20, 100);
-      ledcWrite(ledChannel, map(dutyCycle, 0, 100, 0, 255));
+      writeFanDuty(dutyCycle);
       break;
     case 4: 
       mode = 4;
       dutyCycle = max(dutyCycle-20, 0);
-      ledcWrite(ledChannel, map(dutyCycle, 0, 100, 0, 255));
+      writeFanDuty(dutyCycle);
       break;
   }
   modeDisplay();
@@ -299,7 +322,7 @@ void handleButtonLongPress(int buttonIndex) {
         EEPROM.put(ROM0, ROM);
         EEPROM.commit();
         enableDisplay = !enableDisplay;
-        ledcWrite(gpioPin, frequency*100);
+        applyPwmFrequency();
         break;
       case 1: 
         switch(Customize){
@@ -326,18 +349,24 @@ void handleButtonLongPress(int buttonIndex) {
     case 1: 
       mode = 4;
       dutyCycle = 100;
-      ledcWrite(ledChannel, 255);
+      writeFanDuty(100);
       break;
     case 2: 
       mode = 4;
       dutyCycle = 0;
-      ledcWrite(ledChannel, 0);
+      writeFanDuty(0);
       break;
   }
   modeDisplay();
 }
 
 void updateDisplay() {
+  unsigned long currentMillis = millis();
+  if(currentMillis - lastDisplayUpdateTime < displayUpdateInterval){
+    return;
+  }
+  lastDisplayUpdateTime = currentMillis;
+
   // 屏幕电源管理
   if(isSleeping){
     if(displayOn){
@@ -442,17 +471,14 @@ if(sleepCountdown > 0){
 
 void updatePWM() {
   if(isSleeping) return;
-   // 新增：仅保留最大值记录
-  maxCpuValue = max(maxCpuValue, cpuValue);
-  maxGpuValue = max(maxGpuValue, gpuValue);
-
   if(millis() - lastDataReceivedTime > dataTimeoutInterval){
     dutyCycle = pwm0wd; 
   } else {
+    maxValue = max(cpuValue, gpuValue);
     dutyCycle = processBluetoothValue(maxValue);
   }
   
-  ledcWrite(ledChannel, map(dutyCycle, 0, 100, 0, 255));
+  writeFanDuty(dutyCycle);
 }
 
 int processBluetoothValue(int value) {

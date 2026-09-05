@@ -36,7 +36,7 @@
 
 - Adafruit GFX Library
 - Adafruit SSD1306
-- ESP32 Arduino Core（提供 BluetoothSerial、EEPROM）
+- ESP32 Arduino Core 2.x 或 3.x（代码已兼容两代 LEDC 接口，并使用 BluetoothSerial、EEPROM）
 
 固件默认硬件连接：
 
@@ -120,6 +120,8 @@ GPU47.8
 ```
 
 ESP32 收到有效数据后回复 `ACK`。默认串口速率为 115200。
+
+风扇根据当前 CPU/GPU 中的较高温度及时调速，不再永久保留历史峰值。蓝牙断开或超过设定时间未收到温度数据时，设备会按原设计停止风扇并关闭屏幕。
 
 ## 注意事项
 
