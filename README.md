@@ -28,6 +28,7 @@
 | `HidSharp.dll` | LibreHardwareMonitor 依赖 |
 | `Only.ico` | 上位机图标 |
 | `fan-打包exe 配置文件/` | 已打包程序、DLL 与配置文件的完整可运行目录 |
+| `CPU_fan-可运行版/` | 整理后的 Windows 可运行版本，下载整个目录即可使用 |
 
 ## 快速使用
 
