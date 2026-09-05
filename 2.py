@@ -4,6 +4,7 @@ import os
 import sys
 import threading
 import time
+import winreg
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional, Tuple
@@ -53,6 +54,8 @@ DEFAULT_TARGET_DESCRIPTION_CONTAINS = ""
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else SCRIPT_DIR
 CONFIG_FILE = os.path.join(APP_DIR, "com.ini")
+STARTUP_REGISTRY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
+STARTUP_VALUE_NAME = "ESP32FanController"
 MIN_VALID_TEMP = 0.0
 MAX_VALID_TEMP = 120.0
 TEMP_COLORS = {
@@ -75,6 +78,61 @@ def log(message: str) -> None:
 
 def normalize_port_name(port: str) -> str:
     return port.strip().upper()
+
+
+def _command_executable(command: str) -> str:
+    command = command.strip()
+    if not command:
+        return ""
+    if command.startswith('"'):
+        closing_quote = command.find('"', 1)
+        return command[1:closing_quote] if closing_quote > 1 else ""
+    return command.split(maxsplit=1)[0]
+
+
+def ensure_startup_entry() -> None:
+    if not getattr(sys, "frozen", False):
+        log("Source mode: startup entry is not changed.")
+        return
+
+    executable_path = os.path.abspath(sys.executable)
+    desired_command = f'"{executable_path}"'
+    try:
+        with winreg.CreateKeyEx(
+            winreg.HKEY_CURRENT_USER,
+            STARTUP_REGISTRY_PATH,
+            0,
+            winreg.KEY_READ | winreg.KEY_WRITE,
+        ) as key:
+            entries = []
+            index = 0
+            while True:
+                try:
+                    entries.append(winreg.EnumValue(key, index))
+                    index += 1
+                except OSError:
+                    break
+
+            for value_name, command, _ in entries:
+                if value_name == STARTUP_VALUE_NAME or not isinstance(command, str):
+                    continue
+                registered_executable = _command_executable(command)
+                if os.path.basename(registered_executable).lower() == "cpu_fan.exe":
+                    winreg.DeleteValue(key, value_name)
+                    log(f"Removed duplicate startup entry: {value_name}")
+
+            try:
+                current_command, _ = winreg.QueryValueEx(key, STARTUP_VALUE_NAME)
+            except FileNotFoundError:
+                current_command = ""
+
+            if current_command != desired_command:
+                winreg.SetValueEx(key, STARTUP_VALUE_NAME, 0, winreg.REG_SZ, desired_command)
+                log(f"Startup entry updated: {executable_path}")
+            else:
+                log("Startup entry is already current.")
+    except OSError as exc:
+        log(f"Startup entry update failed: {exc}")
 
 
 @dataclass
@@ -522,6 +580,7 @@ class FanControllerApp:
         log("=" * 60)
         log("ESP32 fan controller started")
         log("=" * 60)
+        ensure_startup_entry()
         if not self.reader.open():
             return
         self.serial_bridge.connect()
