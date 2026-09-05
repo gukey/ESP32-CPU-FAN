@@ -17,4 +17,4 @@ Desktop.ini
 *.log
 
 # LibreHardwareMonitor runtime driver
-/CPU_fan.sys
+CPU_fan.sys

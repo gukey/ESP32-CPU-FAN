@@ -28,7 +28,7 @@
 | `HidSharp.dll` | LibreHardwareMonitor 依赖 |
 | `Only.ico` | 上位机图标 |
 | `fan-打包exe 配置文件/` | 已打包程序、DLL 与配置文件的完整可运行目录 |
-| `CPU_fan-可运行版/` | 整理后的 Windows 可运行版本，下载整个目录即可使用 |
+| `CPU_fan-可运行版/` | 整理后的 Windows 单文件可运行版本，DLL 已内置 |
 
 ## 快速使用
 
@@ -55,16 +55,14 @@
 
 ### 3. 运行上位机
 
-下载或克隆本仓库，确保下面四个文件位于同一目录：
+下载 `CPU_fan-可运行版` 中的 `CPU_fan.exe` 即可运行。硬件监控 DLL 已打包到 EXE 内部，不需要另外下载；`com.ini` 是可选的外部配置文件，缺少时程序会自动生成。
 
 ```text
 CPU_fan.exe
-com.ini
-LibreHardwareMonitorLib.dll
-HidSharp.dll
+com.ini（可选）
 ```
 
-编辑 `com.ini`，将 `port` 改为实际端口，然后双击 `CPU_fan.exe`。程序在系统托盘运行；右键托盘图标可查看温度、连接状态或退出。
+双击 `CPU_fan.exe` 后程序在系统托盘运行；右键托盘图标可查看温度、连接状态或退出。`com.ini` 默认优先使用 `COM5`；COM5 不可用或连接后收不到 ESP32 的 `ACK` 时，程序会暂时跳过错误端口，并按设备特征、蓝牙端口和其他可用 COM 口的顺序继续寻找。
 
 首次运行会自动添加名为 `ESP32FanController` 的当前用户开机启动项，无需管理员权限。程序不会重复添加；如果移动了 EXE，再从新位置手动运行一次，启动项会自动覆盖为新路径，并清理其他名称下指向旧 `CPU_fan.exe` 的重复启动项。
 

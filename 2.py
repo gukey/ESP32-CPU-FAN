@@ -339,6 +339,7 @@ class SerialBridge:
         self.last_tx_monotonic = 0.0
         self.last_rx_monotonic = 0.0
         self.pending_since_monotonic = 0.0
+        self.failed_ports_until = {}
 
     @property
     def connected(self) -> bool:
@@ -377,13 +378,21 @@ class SerialBridge:
         ]
         ordered: List[PortInfo] = []
         seen = set()
-        for group in ([targeted, preferred, matched] if not self.is_auto_mode() else [targeted, matched, ports]):
+        for group in ([preferred, targeted, matched, ports] if not self.is_auto_mode() else [targeted, matched, ports]):
             for port in group:
                 if port.device in seen:
                     continue
                 ordered.append(port)
                 seen.add(port.device)
-        return ordered
+        now = time.monotonic()
+        return [port for port in ordered if self.failed_ports_until.get(port.device, 0.0) <= now]
+
+    def mark_port_temporarily_failed(self, port: str) -> None:
+        normalized_port = normalize_port_name(port)
+        if normalized_port and normalized_port != "AUTO":
+            cooldown = max(30.0, self.ack_timeout_seconds * 3.0)
+            self.failed_ports_until[normalized_port] = time.monotonic() + cooldown
+            log(f"Port {normalized_port} paused for {cooldown:.0f}s.")
 
     def connect(self) -> bool:
         self.disconnect()
@@ -412,6 +421,7 @@ class SerialBridge:
                 return True
             except Exception as exc:
                 self.conn = None
+                self.mark_port_temporarily_failed(candidate.device)
                 log(f"Serial connect failed on {candidate.device}: {exc}")
         return False
 
@@ -425,6 +435,7 @@ class SerialBridge:
                     self.last_rx_monotonic = time.monotonic()
                     if line.upper() == "ACK":
                         self.pending_since_monotonic = 0.0
+                        self.failed_ports_until.pop(self.port, None)
                     log(f"Serial RX: {line}")
         except Exception as exc:
             log(f"Serial read failed: {exc}")
@@ -437,6 +448,7 @@ class SerialBridge:
         now = time.monotonic()
         if self.pending_since_monotonic and now - self.pending_since_monotonic >= self.ack_timeout_seconds:
             log("Serial link stale: forcing reconnect.")
+            self.mark_port_temporarily_failed(self.port)
             self.disconnect()
             return False
         return self.connected

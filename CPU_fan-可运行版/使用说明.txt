@@ -1,15 +1,13 @@
 ESP32 CPU/GPU 温控风扇 Windows 可运行版
 
 目录文件：
-- CPU_fan.exe：上位机主程序
-- com.ini：串口和重连参数
-- LibreHardwareMonitorLib.dll：硬件温度读取库
-- HidSharp.dll：硬件监控依赖库
+- CPU_fan.exe：已内置运行依赖的单文件上位机
+- com.ini：可选的串口和重连参数；删除后程序会自动生成
 
 使用方法：
 1. 先在 Windows 中配对名为“esp32散热器”的蓝牙设备。
 2. 在设备管理器中确认对应的 COM 端口。
-3. 编辑 com.ini，将 port 改为实际端口；也可以填写 AUTO 自动查找。
+3. com.ini 默认优先连接 COM5；COM5 不可用或收不到设备 ACK 时，会自动尝试其他端口。
 4. 双击 CPU_fan.exe，程序将在系统托盘运行。
 
 首次运行会自动添加当前用户的开机启动项。移动整个目录后，请从新位置手动运行一次 CPU_fan.exe，程序会自动更新启动项路径。
