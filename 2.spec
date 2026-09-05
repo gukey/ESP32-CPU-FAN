@@ -5,6 +5,7 @@ a = Analysis(
     ['2.py'],
     pathex=[],
     binaries=[
+        ('OpenHardwareMonitorLib.dll', '.'),
         ('LibreHardwareMonitorLib.dll', '.'),
         ('HidSharp.dll', '.'),
         ('DiskInfoToolkit.dll', '.'),

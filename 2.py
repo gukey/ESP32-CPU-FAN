@@ -248,6 +248,7 @@ def load_config(path: str) -> Tuple[str, int, float, float, float, float, float,
 class HardwareTemperatureReader:
     def __init__(self) -> None:
         self.computer = None
+        self.backend_name = ""
         self.hardware_type = None
         self.sensor_type = None
         self.gpu_types: List[object] = []
@@ -268,8 +269,16 @@ class HardwareTemperatureReader:
                 except Exception:
                     pass
             self._add_reference("HidSharp.dll")
-            self._add_reference("LibreHardwareMonitorLib.dll")
-            from LibreHardwareMonitor.Hardware import Computer, HardwareType, SensorType
+            open_hardware_path = os.path.join(SCRIPT_DIR, "OpenHardwareMonitorLib.dll")
+            if os.path.exists(open_hardware_path):
+                self._add_reference("RAMSPDToolkit-NDD.dll")
+                self._add_reference("OpenHardwareMonitorLib.dll")
+                from OpenHardwareMonitor.Hardware import Computer, HardwareType, SensorType
+                self.backend_name = "OpenHardwareMonitorLib"
+            else:
+                self._add_reference("LibreHardwareMonitorLib.dll")
+                from LibreHardwareMonitor.Hardware import Computer, HardwareType, SensorType
+                self.backend_name = "LibreHardwareMonitorLib"
 
             self.hardware_type = HardwareType
             self.sensor_type = SensorType
@@ -283,12 +292,15 @@ class HardwareTemperatureReader:
             self.computer = Computer()
             self.computer.IsCpuEnabled = True
             self.computer.IsGpuEnabled = True
-            self.computer.Open()
+            if self.backend_name == "OpenHardwareMonitorLib":
+                self.computer.Open(True)
+            else:
+                self.computer.Open()
             self.target_hardware = [
                 hw for hw in self.computer.Hardware
                 if hw.HardwareType == self.hardware_type.Cpu or hw.HardwareType in self.gpu_types
             ]
-            log("Hardware monitor initialized.")
+            log(f"Hardware monitor initialized: {self.backend_name}.")
             return True
         except Exception as exc:
             log(f"Hardware monitor init failed: {exc}")

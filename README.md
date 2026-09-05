@@ -24,8 +24,9 @@
 | `2.py` | Windows 上位机源码 |
 | `CPU_fan.exe` | 已编译的 Windows 上位机 |
 | `com.ini` | 串口及重连参数 |
-| `LibreHardwareMonitorLib.dll` | 硬件温度读取库，当前版本 0.9.6 |
-| `HidSharp.dll` | LibreHardwareMonitor 依赖，当前版本 2.6.4 |
+| `OpenHardwareMonitorLib.dll` | 默认硬件温度读取库，当前版本 1.0.9513 |
+| `LibreHardwareMonitorLib.dll` | 备用硬件温度读取库，当前版本 0.9.6 |
+| `HidSharp.dll` | 硬件监控库依赖，当前版本 2.6.4 |
 | `Only.ico` | 上位机图标 |
 | `fan-打包exe 配置文件/` | 已打包程序、DLL 与配置文件的完整可运行目录 |
 | `CPU_fan-可运行版/` | 整理后的 Windows 单文件可运行版本，DLL 已内置 |
@@ -103,7 +104,7 @@ python -m pip install -r requirements.txt
 python .\2.py
 ```
 
-直接运行源码时，LibreHardwareMonitor 及其配套 DLL 需要与 `2.py` 位于同一目录。仓库已包含 LibreHardwareMonitor 0.9.6 官方发布包所需的运行库。
+直接运行源码时，硬件监控库及其配套 DLL 需要与 `2.py` 位于同一目录。程序优先使用 OpenHardwareMonitorLib 1.0.9513；缺少该 DLL 时回退到 LibreHardwareMonitor 0.9.6。当前电脑实测 0.9.6 无法读取 CPU 温度，因此发布版使用 OpenHardwareMonitorLib。
 
 ## 编译 EXE
 
@@ -129,7 +130,7 @@ ESP32 收到有效数据后回复 `ACK`。默认串口速率为 115200。
 
 ## 注意事项
 
-- 目前仅支持 Windows；温度数据由 LibreHardwareMonitor 获取。
+- 目前仅支持 Windows；温度数据默认由 OpenHardwareMonitorLib 获取。
 - 某些硬件传感器可能需要管理员权限才能读取。
 - Windows 或杀毒软件可能会对未签名的 PyInstaller 程序报警，请自行核对源码后运行。
 - 高温控制属于辅助散热方案，请勿以本项目替代主板自身的过热保护。
