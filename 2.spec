@@ -6,9 +6,7 @@ a = Analysis(
     pathex=[],
     binaries=[
         ('OpenHardwareMonitorLib.dll', '.'),
-        ('LibreHardwareMonitorLib.dll', '.'),
         ('HidSharp.dll', '.'),
-        ('DiskInfoToolkit.dll', '.'),
         ('RAMSPDToolkit-NDD.dll', '.'),
         ('System.Memory.dll', '.'),
         ('System.Buffers.dll', '.'),

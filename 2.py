@@ -1,12 +1,10 @@
 import collections
-import configparser
 import os
 import sys
 import threading
 import time
 import winreg
 from dataclasses import dataclass
-from datetime import datetime
 from typing import List, Optional, Tuple
 
 try:
@@ -53,8 +51,6 @@ DEFAULT_TARGET_DESCRIPTION_CONTAINS = ""
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else SCRIPT_DIR
-CONFIG_FILE = os.path.join(APP_DIR, "com.ini")
-LOG_FILE = os.path.join(APP_DIR, "CPU_fan.log")
 STARTUP_REGISTRY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 STARTUP_VALUE_NAME = "ESP32FanController"
 MIN_VALID_TEMP = 0.0
@@ -65,22 +61,15 @@ TEMP_COLORS = {
     "high": (255, 45, 45),
 }
 _DEFAULT_FONT = ImageFont.load_default()
-_LOG_LOCK = threading.Lock()
 
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
 
 def log(message: str) -> None:
-    formatted = f"[{datetime.now().strftime('%H:%M:%S')}] {message}"
+    # 发布版不在 EXE 旁生成日志文件；源码运行时仍可在控制台查看诊断信息。
     try:
-        print(formatted)
-    except OSError:
-        pass
-    try:
-        with _LOG_LOCK:
-            with open(LOG_FILE, "a", encoding="utf-8") as log_file:
-                log_file.write(formatted + "\n")
+        print(message)
     except OSError:
         pass
 
@@ -172,76 +161,21 @@ def get_serial_ports() -> List[PortInfo]:
     return ports
 
 
-def load_config(path: str) -> Tuple[str, int, float, float, float, float, float, float, int, List[str], str, str]:
-    if not os.path.exists(path):
-        config = configparser.ConfigParser()
-        config["SERIAL"] = {"port": DEFAULT_COM_PORT, "baudrate": str(DEFAULT_BAUDRATE)}
-        config["SETTINGS"] = {
-            "update_interval": str(DEFAULT_UPDATE_INTERVAL),
-            "reconnect_interval": str(DEFAULT_RECONNECT_INTERVAL),
-            "wake_gap_seconds": str(DEFAULT_WAKE_GAP_SECONDS),
-            "wake_recovery_seconds": str(DEFAULT_WAKE_RECOVERY_SECONDS),
-            "ack_timeout_seconds": str(DEFAULT_ACK_TIMEOUT_SECONDS),
-            "tray_update_interval": str(DEFAULT_TRAY_UPDATE_INTERVAL),
-            "history_size": str(DEFAULT_HISTORY_SIZE),
-        }
-        config["DISCOVERY"] = {
-            "port_scan_keywords": DEFAULT_PORT_SCAN_KEYWORDS,
-            "target_hwid_contains": DEFAULT_TARGET_HWID_CONTAINS,
-            "target_description_contains": DEFAULT_TARGET_DESCRIPTION_CONTAINS,
-        }
-        with open(path, "w", encoding="utf-8") as f:
-            config.write(f)
-
-    config = configparser.ConfigParser()
-    try:
-        config.read(path, encoding="utf-8")
-    except (configparser.Error, OSError) as exc:
-        log(f"Config read failed, using defaults where needed: {exc}")
-
-    def safe_getint(section: str, option: str, fallback: int) -> int:
-        try:
-            return config.getint(section, option, fallback=fallback)
-        except (ValueError, configparser.Error):
-            log(f"Invalid config value {section}.{option}; using {fallback}.")
-            return fallback
-
-    def safe_getfloat(section: str, option: str, fallback: float) -> float:
-        try:
-            return config.getfloat(section, option, fallback=fallback)
-        except (ValueError, configparser.Error):
-            log(f"Invalid config value {section}.{option}; using {fallback}.")
-            return fallback
-
-    port = normalize_port_name(config.get("SERIAL", "port", fallback=DEFAULT_COM_PORT))
-    baudrate = max(1, safe_getint("SERIAL", "baudrate", DEFAULT_BAUDRATE))
-    update_interval = max(0.2, safe_getfloat("SETTINGS", "update_interval", DEFAULT_UPDATE_INTERVAL))
-    reconnect_interval = max(0.5, safe_getfloat("SETTINGS", "reconnect_interval", DEFAULT_RECONNECT_INTERVAL))
-    wake_gap_seconds = max(2.0, safe_getfloat("SETTINGS", "wake_gap_seconds", DEFAULT_WAKE_GAP_SECONDS))
-    wake_recovery_seconds = safe_getfloat("SETTINGS", "wake_recovery_seconds", DEFAULT_WAKE_RECOVERY_SECONDS)
-    ack_timeout_seconds = safe_getfloat("SETTINGS", "ack_timeout_seconds", DEFAULT_ACK_TIMEOUT_SECONDS)
-    tray_update_interval = max(0.2, safe_getfloat("SETTINGS", "tray_update_interval", DEFAULT_TRAY_UPDATE_INTERVAL))
-    history_size = max(10, safe_getint("SETTINGS", "history_size", DEFAULT_HISTORY_SIZE))
-    port_scan_keywords = [
-        item.strip().lower()
-        for item in config.get("DISCOVERY", "port_scan_keywords", fallback=DEFAULT_PORT_SCAN_KEYWORDS).split(",")
-        if item.strip()
-    ]
-    target_hwid_contains = config.get("DISCOVERY", "target_hwid_contains", fallback=DEFAULT_TARGET_HWID_CONTAINS).strip().lower()
-    target_description_contains = config.get("DISCOVERY", "target_description_contains", fallback=DEFAULT_TARGET_DESCRIPTION_CONTAINS).strip().lower()
+def load_config() -> Tuple[str, int, float, float, float, float, float, float, int, List[str], str, str]:
+    """返回内置配置，发布版不读取或生成外部配置文件。"""
     return (
-        port,
-        baudrate,
-        update_interval,
-        reconnect_interval,
-        wake_gap_seconds,
-        max(5.0, wake_recovery_seconds),
-        max(4.0, ack_timeout_seconds),
-        tray_update_interval,
-        history_size,
-        port_scan_keywords,
-        target_hwid_contains,
-        target_description_contains,
+        DEFAULT_COM_PORT,
+        DEFAULT_BAUDRATE,
+        DEFAULT_UPDATE_INTERVAL,
+        DEFAULT_RECONNECT_INTERVAL,
+        DEFAULT_WAKE_GAP_SECONDS,
+        DEFAULT_WAKE_RECOVERY_SECONDS,
+        DEFAULT_ACK_TIMEOUT_SECONDS,
+        DEFAULT_TRAY_UPDATE_INTERVAL,
+        DEFAULT_HISTORY_SIZE,
+        [item.strip().lower() for item in DEFAULT_PORT_SCAN_KEYWORDS.split(",") if item.strip()],
+        DEFAULT_TARGET_HWID_CONTAINS,
+        DEFAULT_TARGET_DESCRIPTION_CONTAINS,
     )
 
 
@@ -269,16 +203,10 @@ class HardwareTemperatureReader:
                 except Exception:
                     pass
             self._add_reference("HidSharp.dll")
-            open_hardware_path = os.path.join(SCRIPT_DIR, "OpenHardwareMonitorLib.dll")
-            if os.path.exists(open_hardware_path):
-                self._add_reference("RAMSPDToolkit-NDD.dll")
-                self._add_reference("OpenHardwareMonitorLib.dll")
-                from OpenHardwareMonitor.Hardware import Computer, HardwareType, SensorType
-                self.backend_name = "OpenHardwareMonitorLib"
-            else:
-                self._add_reference("LibreHardwareMonitorLib.dll")
-                from LibreHardwareMonitor.Hardware import Computer, HardwareType, SensorType
-                self.backend_name = "LibreHardwareMonitorLib"
+            self._add_reference("RAMSPDToolkit-NDD.dll")
+            self._add_reference("OpenHardwareMonitorLib.dll")
+            from OpenHardwareMonitor.Hardware import Computer, HardwareType, SensorType
+            self.backend_name = "OpenHardwareMonitorLib"
 
             self.hardware_type = HardwareType
             self.sensor_type = SensorType
@@ -292,10 +220,8 @@ class HardwareTemperatureReader:
             self.computer = Computer()
             self.computer.IsCpuEnabled = True
             self.computer.IsGpuEnabled = True
-            if self.backend_name == "OpenHardwareMonitorLib":
-                self.computer.Open(True)
-            else:
-                self.computer.Open()
+            # portable=False 让 Ring0 驱动释放到系统临时目录，避免在 EXE 旁生成 .sys。
+            self.computer.Open(False)
             self.target_hardware = [
                 hw for hw in self.computer.Hardware
                 if hw.HardwareType == self.hardware_type.Cpu or hw.HardwareType in self.gpu_types
@@ -513,7 +439,7 @@ class FanControllerApp:
             self.port_scan_keywords,
             self.target_hwid_contains,
             self.target_description_contains,
-        ) = load_config(CONFIG_FILE)
+        ) = load_config()
         self.reader = HardwareTemperatureReader()
         self.serial_bridge = SerialBridge(
             self.com_port,
