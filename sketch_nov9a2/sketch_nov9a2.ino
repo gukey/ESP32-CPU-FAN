@@ -4,6 +4,9 @@
 #include <Adafruit_SSD1306.h>
 #include <EEPROM.h>
 #include <esp_arduino_version.h>
+#include <esp_idf_version.h>
+#include <esp_system.h>
+#include <esp_task_wdt.h>
 
 // 全局变量声明
 unsigned long lastConnectedTime = 0;
@@ -12,6 +15,10 @@ unsigned long lastDataReceivedTime = 0;
 const unsigned long checkInterval = 3000;
 const unsigned long sleepTimeout = 5000;
 const unsigned long dataTimeoutInterval = 12000;
+const unsigned long bluetoothRecoveryTimeout = 60000;
+const unsigned long bluetoothRecoveryInterval = 30000;
+unsigned long lastBluetoothRecoveryTime = 0;
+bool bluetoothRecoveryArmed = false;
 bool isSleeping = false;
 bool btConnected = false;
 bool displayOn = true;
@@ -23,7 +30,7 @@ const int ledChannel = 0;
 const int resolution = 8;
 int frequency = 150;
 int dutyCycle = 20;
-int mode = 1;  // 修改：默认模式改为Quiet模式(1)
+int mode = 1;  // 固定使用 Quiet 自动温控模式
 int ROM11;
 
 // EEPROM相关
@@ -93,8 +100,57 @@ void applyPwmFrequency() {
   writeFanDuty(dutyCycle);
 }
 
+void setupWatchdog() {
+#if ESP_IDF_VERSION_MAJOR >= 5
+  esp_task_wdt_config_t watchdogConfig = {
+    .timeout_ms = 8000,
+    .idle_core_mask = 0,
+    .trigger_panic = true
+  };
+  esp_err_t result = esp_task_wdt_init(&watchdogConfig);
+  if(result == ESP_ERR_INVALID_STATE){
+    esp_task_wdt_reconfigure(&watchdogConfig);
+  }
+#else
+  esp_task_wdt_init(8, true);
+#endif
+  esp_task_wdt_add(NULL);
+}
+
+void recoverBluetooth() {
+  unsigned long currentMillis = millis();
+  if(currentMillis - lastBluetoothRecoveryTime < bluetoothRecoveryInterval){
+    return;
+  }
+
+  lastBluetoothRecoveryTime = currentMillis;
+  bluetoothRecoveryArmed = false;
+
+  // 恢复期间始终保持风扇停止，避免使用过期温度继续运转。
+  dutyCycle = 0;
+  writeFanDuty(0);
+  isSleeping = true;
+  sleepCountdown = 0;
+  updateDisplay();
+
+  // 每个有效通信周期只软恢复一次，电脑休眠时不会循环重启。
+  esp_task_wdt_reset();
+  SerialBT.end();
+  delay(300);
+  bool bluetoothStarted = SerialBT.begin("esp32散热器");
+  SerialBT.setTimeout(80);
+  btConnected = false;
+  lastConnectedTime = millis();
+
+  if(!bluetoothStarted){
+    delay(100);
+    ESP.restart();
+  }
+}
+
 void setup() {
   Serial.begin(115200);
+  setupWatchdog();
 
   // EEPROM初始化
   EEPROM.begin(8);
@@ -119,11 +175,6 @@ void setup() {
   // PWM初始化
   SerialBT.setTimeout(80);
   configurePwm();
-
-  // 按钮初始化
-  for(int i=0; i<5; i++){
-    pinMode(buttonPins[i], INPUT_PULLDOWN);
-  }
 
   // OLED初始化
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
@@ -151,10 +202,15 @@ void loop() {
       btConnected = currentStatus;
       if(btConnected){
         lastConnectedTime = currentMillis;
-        lastDataReceivedTime = currentMillis; // 重置数据接收时间
-        isSleeping = false;
+        // 仅建立连接不恢复风扇，必须等到收到新的合法温度数据。
+        updateDisplay();
+      } else {
+        // 蓝牙断开立即停止风扇；等待下次合法温度数据再恢复。
+        dutyCycle = 0;
+        writeFanDuty(0);
+        isSleeping = true;
         sleepCountdown = 0;
-        updatePWM(); // 立即更新风扇速度
+        bluetoothRecoveryArmed = false;
         updateDisplay();
       }
     }
@@ -192,23 +248,14 @@ void loop() {
     parseBluetoothData(input);
   }
 
-  // 按钮处理
-  for(int i=0; i<5; i++){
-    bool buttonState = digitalRead(buttonPins[i]) == HIGH;
-    if(buttonState && !buttonStates[i]){
-      buttonPressTimes[i] = currentMillis;
-      buttonStates[i] = true;
-    } else if(!buttonState && buttonStates[i]){
-      if(currentMillis - buttonPressTimes[i] >= longPressDuration){
-        handleButtonLongPress(i);
-      } else {
-        handleButtonPress(i);
-      }
-      buttonStates[i] = false;
-    }
+  // 已显示连接但长时间收不到合法温度，判定蓝牙链路异常并软重启蓝牙。
+  if(btConnected && bluetoothRecoveryArmed &&
+     currentMillis - lastDataReceivedTime >= bluetoothRecoveryTimeout){
+    recoverBluetooth();
   }
 
   updateDisplay();
+  esp_task_wdt_reset();
 }
 
 void parseBluetoothData(const String& data) {
@@ -233,6 +280,7 @@ void parseBluetoothData(const String& data) {
     return;
   }
   lastDataReceivedTime = millis();
+  bluetoothRecoveryArmed = true;
   
     // 强制唤醒设备
   isSleeping = false;
@@ -470,6 +518,11 @@ if(sleepCountdown > 0){
 }
 
 void updatePWM() {
+  if(!btConnected){
+    dutyCycle = 0;
+    writeFanDuty(0);
+    return;
+  }
   if(isSleeping) return;
   if(millis() - lastDataReceivedTime > dataTimeoutInterval){
     dutyCycle = pwm0wd; 
