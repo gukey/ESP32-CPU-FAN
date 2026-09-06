@@ -1,0 +1,22 @@
+# 固件回归测试
+
+`firmware_test.cpp` 直接包含实际 `.ino`，以模拟时间、蓝牙队列、PWM 和屏幕执行状态测试。硬件替身不能验证真实蓝牙栈、看门狗复位、电气输出或长时间运行稳定性。
+
+在仓库根目录使用支持 C++17 的本机编译器运行：
+
+```powershell
+python -m pip install ziglang==0.14.1
+python -m ziglang c++ -std=c++17 -I tests/firmware_stubs tests/firmware_test.cpp -o "$env:TEMP/esp32-fan-tests.exe"
+& "$env:TEMP/esp32-fan-tests.exe"
+```
+
+覆盖：上电停转、无屏幕启动、合法/非法/分包/超长报文、断联与快速重连、睡眠期间不重试、温度过期、计时回绕、单次蓝牙恢复及收到新数据重新放行。
+
+实际固件编译使用 `arduino-cli compile --fqbn esp32:esp32:esp32 sketch_nov9a2`，需要安装 ESP32 核心、Adafruit SSD1306 及其依赖。无论本机测试是否通过，都需要烧录后验证电脑休眠/唤醒和持续运行。
+
+## 本次验证记录
+
+- 真实核心编译通过：Arduino-ESP32 3.3.7，ESP32 Dev Module 默认分区；Adafruit SSD1306 2.5.17、GFX 1.12.6、BusIO 1.17.4。
+- 程序 1,101,855 字节（84%），静态内存 43,612 字节（13%）。
+- 本机模拟测试通过，包括接收期间时间前进、计数回绕、超时残包及传感器分别失效；2.x/3.x 两套条件编译分支均通过模拟测试。
+- 尚未进行 Arduino-ESP32 2.x 真实工具链编译、实机烧录或长时间运行测试。模拟看门狗只验证调用流程，不能验证实际复位。
