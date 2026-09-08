@@ -32,6 +32,8 @@ bool recoveryArmed = false;
 bool watchdogReady = false;
 bool displayReady = false;
 bool displayOn = false;
+bool countdownActive = false;
+uint32_t countdownStartTime = 0;
 bool cpuValid = false;
 bool gpuValid = false;
 float cpuValue = 0;
@@ -58,6 +60,12 @@ void writeFanDuty(int percent) {
 }
 
 void stopFan() {
+  // 只在有效通信结束时启动一次关屏倒计时，停转不等待屏幕。
+  if(dataValid && displayReady && !countdownActive) {
+    countdownActive = true;
+    countdownStartTime = millis();
+    lastDisplayTime = countdownStartTime - 200;
+  }
   dataValid = false;
   cpuValid = false;
   gpuValid = false;
@@ -161,6 +169,8 @@ void parseLine() {
   connected = true;
   lastDataTime = now;
   dataValid = true;
+  if(countdownActive) lastDisplayTime = now - 200;
+  countdownActive = false;
   recoveryArmed = true;
   SerialBT.println("ACK");
 }
@@ -205,13 +215,24 @@ void recoverBluetooth(uint32_t now) {
 void updateDisplay(uint32_t now) {
   if(!displayReady || uint32_t(now - lastDisplayTime) < 200) return;
   lastDisplayTime = now;
-  bool wantOn = connected && dataValid;
+  uint32_t countdownElapsed = uint32_t(now - countdownStartTime);
+  if(countdownActive && countdownElapsed >= 3000) countdownActive = false;
+  bool wantOn = (connected && dataValid) || countdownActive;
   if(wantOn != displayOn) {
     display.ssd1306_command(wantOn ? SSD1306_DISPLAYON : SSD1306_DISPLAYOFF);
     displayOn = wantOn;
   }
   if(!displayOn) return;
   display.clearDisplay();
+  if(countdownActive) {
+    // 默认字体 6x8，放大 6 倍后在 128x64 屏幕居中显示。
+    display.setTextSize(6);
+    display.setCursor(46, 8);
+    display.print(3 - static_cast<int>(countdownElapsed / 1000));
+    display.display();
+    return;
+  }
+  display.setTextSize(1);
   display.setCursor(0, 0);
   display.println("Mode: Quiet Auto");
   display.print("Speed: "); display.print(dutyCycle); display.println("%");

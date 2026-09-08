@@ -50,6 +50,21 @@ int main(){
  assert(before-dutyCycle>=2 && before-dutyCycle<=4);
  send("CPU80\n");assert(dutyCycle==100);
  SerialBT.client=false;loop();assert(dutyCycle==0 && rampDuty==0);
+ // 关屏 3、2、1：倒计时期间风扇一直为零；新数据能立即取消。
+ displayReady=true;SerialBT.client=true;send("CPU65\n");
+ SerialBT.client=false;loop();assert(countdownActive && dutyCycle==0 && display.lastNumber==3);
+ uint32_t start=countdownStartTime;
+ testTime=start+1000;loop();assert(display.lastNumber==2 && dutyCycle==0);
+ testTime=start+2000;loop();assert(display.lastNumber==1 && dutyCycle==0);
+ testTime=start+3000;loop();assert(!countdownActive && !displayOn);
+ testTime+=60000;loop();assert(!countdownActive && !displayOn);
+ SerialBT.client=true;send("CPU65\n");
+ testTime=lastDataTime+12000;loop();assert(countdownActive && dutyCycle==0);
+ send("GPU60\n");assert(!countdownActive && displayOn && display.textSize==1);
+ // 倒计时也支持 millis 回绕。
+ testTime=0xfffffff0u;SerialBT.client=false;loop();
+ testTime=uint32_t(countdownStartTime+2000);loop();assert(display.lastNumber==1);
+ testTime=uint32_t(countdownStartTime+3000);loop();assert(!displayOn);
  assert(feeds>0);
  std::cout<<"PASS: startup, parsing, reconnect, sleep, rollover, expiry, one-shot recovery, OLED failure\n";
 }
