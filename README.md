@@ -108,6 +108,16 @@ ESP32 收到有效数据后回复 `ACK`。默认串口速率为 115200。
 
 固件行为测试见 `tests/README.md`。源码修改需要重新编译并通过 USB 烧录到 ESP32，更新 Windows EXE 不会更新设备固件。
 
+## OLED 显示布局
+
+正常运行时屏幕采用左右两栏大字布局：左侧显示 CPU 温度，右侧显示 GPU 温度；温度显示为便于远距离读取的四舍五入整数，温控计算仍使用接收到的原始小数值。底部依次显示连接状态 `CON`、当前风扇速度 `SPEED xx%` 和安静模式 `QUIET`，不再显示 PWM 频率。两位数温度使用最大字号，三位数温度自动缩小以避免越界；无效温度显示 `--`。关机倒计时仍显示居中的 `3`、`2`、`1`。
+
+示例渲染图：
+
+- [OLED 正常布局预览](docs/oled-preview.png)
+- [OLED 高温/满速布局预览](docs/oled-preview-max.png)
+- [OLED 温度缺失布局预览](docs/oled-preview-missing.png)
+
 ## 注意事项
 
 - 目前仅支持 Windows；温度数据默认由 OpenHardwareMonitorLib 获取。

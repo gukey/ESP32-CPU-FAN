@@ -10,4 +10,5 @@ public:
  void print(int value){lastNumber=value;}
  template<class T> void print(T){} template<class T> void println(T){}
  void display(){}
+ void drawFastHLine(int,int,int,int){}
 };

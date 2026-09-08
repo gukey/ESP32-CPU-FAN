@@ -8,6 +8,7 @@
 #include <esp_task_wdt.h>
 #include <atomic>
 #include <math.h>
+#include <stdio.h>
 
 // 无按键硬件：仅使用 Quiet 温控。保持原先 15 kHz PWM 默认值。
 const int fanPin = 5;
@@ -212,6 +213,20 @@ void recoverBluetooth(uint32_t now) {
   if(!SerialBT.begin("esp32散热器")) Serial.println("Bluetooth recovery failed; waiting.");
 }
 
+void drawTemperatureColumn(const char *label, float value, bool valid, int x) {
+  char text[8];
+  if(valid) snprintf(text, sizeof(text), "%d", static_cast<int>(roundf(value)));
+  else snprintf(text, sizeof(text), "--");
+  display.setTextSize(1);
+  display.setCursor(x + 17, 0);
+  display.print(label);
+  display.print(" C");
+  int size = strlen(text) <= 2 ? 5 : 3;
+  display.setTextSize(size);
+  display.setCursor(x + (64 - static_cast<int>(strlen(text)) * 6 * size) / 2, 10 + (40 - 8 * size) / 2);
+  display.print(text);
+}
+
 void updateDisplay(uint32_t now) {
   if(!displayReady || uint32_t(now - lastDisplayTime) < 200) return;
   lastDisplayTime = now;
@@ -232,14 +247,19 @@ void updateDisplay(uint32_t now) {
     display.display();
     return;
   }
+  // 左右各 64 像素，整数温度最大化显示；仅显示取整，温控仍使用原始小数。
+  drawTemperatureColumn("CPU", cpuValue, cpuValid, 0);
+  drawTemperatureColumn("GPU", gpuValue, gpuValid, 64);
+  display.drawFastHLine(2, 50, 124, SSD1306_WHITE);
   display.setTextSize(1);
-  display.setCursor(0, 0);
-  display.println("Mode: Quiet Auto");
-  display.print("Speed: "); display.print(dutyCycle); display.println("%");
-  display.print("Freq: "); display.print(frequencyHz); display.println("Hz");
-  display.print("CPU: "); if(cpuValid) display.println(cpuValue); else display.println("--");
-  display.print("GPU: "); if(gpuValid) display.println(gpuValue); else display.println("--");
-  display.println("CONNECTED");
+  display.setCursor(2, 55);
+  display.print("CON");
+  char fanText[16];
+  snprintf(fanText, sizeof(fanText), "SPEED %d%%", dutyCycle);
+  display.setCursor((128 - static_cast<int>(strlen(fanText)) * 6) / 2, 55);
+  display.print(fanText);
+  display.setCursor(96, 55);
+  display.print("QUIET");
   display.display();
 }
 

@@ -26,3 +26,13 @@ python -m ziglang c++ -std=c++17 -I tests/firmware_stubs tests/firmware_test.cpp
 关屏倒计时回归测试覆盖：3、2、1 顺序、倒计时期间停转、到期关屏、休眠不重复倒计时、数据超时触发、新数据取消及字体恢复、毫秒计数回绕。此次同样只修改源码，不编译发布固件或烧录。
 
 平滑调速版本的 2.x/3.x 条件分支均通过本机模拟测试，新增默认曲线连续性、每秒升 10/降 3 个百分点、高温直达 100%、断联跳过渐变直接停转测试。按用户要求只修改源码，本次真实核心编译已停止，不发布新的固件二进制。
+
+## OLED 布局渲染预览
+
+`render_oled.py` 使用 Adafruit GFX 的 `glcdfont.c` 按实际 5×7 点阵绘制 128×64 屏幕预览，检查字号、边界和底部信息是否重叠：
+
+```powershell
+python tests/render_oled.py
+```
+
+输出文件为 `docs/oled-preview.png`、`docs/oled-preview-max.png` 和 `docs/oled-preview-missing.png`。预览仅用于核对排版，不代表实时硬件读数。
