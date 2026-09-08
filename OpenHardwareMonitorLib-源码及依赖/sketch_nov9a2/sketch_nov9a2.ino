@@ -15,6 +15,14 @@ const int pwmChannel = 0;
 const int pwmResolution = 8;
 const uint32_t dataTimeoutMs = 12000;
 const uint32_t recoveryTimeoutMs = 60000;
+const uint32_t rampIntervalMs = 100;
+const float risePercentPerSecond = 10.0f;
+const float fallPercentPerSecond = 3.0f;
+const int startupDutyPercent = 30; // 试用值，需按实际风扇最低启动占空比调整
+const uint32_t startupHoldMs = 1000;
+float rampDuty = 0;
+uint32_t lastRampTime = 0;
+uint32_t fanStartTime = 0;
 BluetoothSerial SerialBT;
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
 std::atomic<bool> disconnectedEvent(false);
@@ -54,6 +62,8 @@ void stopFan() {
   cpuValid = false;
   gpuValid = false;
   writeFanDuty(0);
+  rampDuty = 0;
+  lastRampTime = millis();
 }
 
 // 回调仅通知主循环；不在蓝牙任务中操作屏幕或重启蓝牙。
@@ -78,23 +88,25 @@ bool setupWatchdog() {
   return true;
 }
 
-int quietDuty(float temperature) {
-  // 保留旧 Quiet 的阈值和计算取整方式。
-  int value = static_cast<int>(temperature);
-  int speed;
-  if(temperature > 80) speed = value * 1.2 + 30;
-  else if(temperature > 75) speed = value * 0.9 + 25;
-  else if(temperature > 70) speed = value * 0.8 + 15;
-  else if(temperature > 65) speed = value * 0.5 + 5;
-  else if(temperature > 60) speed = value * 0.4 + 5;
-  else if(temperature > 55) speed = value * 0.3 + 5;
-  else speed = value * 0.2 + 5;
-  return constrain(speed, 0, 100);
+float quietDuty(float temperature) {
+  const float temperatures[] = {0, 55, 60, 65, 70, 75, 80};
+  // 锚点取原 Quiet 在整数阈值处的默认输出；80°C 提前放行全速。
+  const float duties[] = {5, 16, 23, 31, 40, 75, 100};
+  if(temperature <= 0) return duties[0];
+  for(size_t i = 1; i < 7; ++i) {
+    if(temperature <= temperatures[i]) {
+      float fraction = (temperature - temperatures[i-1]) / (temperatures[i] - temperatures[i-1]);
+      return duties[i-1] + fraction * (duties[i] - duties[i-1]);
+    }
+  }
+  return 100;
 }
 
 void updateFan(uint32_t now) {
   if(!connected || !dataValid || disconnectedEvent.load() || !SerialBT.hasClient()) {
     writeFanDuty(0);
+    rampDuty = 0;
+    lastRampTime = now;
     return;
   }
   if(cpuValid && uint32_t(now - cpuTime) >= dataTimeoutMs) cpuValid = false;
@@ -105,7 +117,33 @@ void updateFan(uint32_t now) {
   }
   float temperature = cpuValid ? cpuValue : gpuValue;
   if(gpuValid && gpuValue > temperature) temperature = gpuValue;
-  writeFanDuty(quietDuty(temperature));
+  // 高温和断联绕过渐变；启动脉冲仅在有效通信时执行。
+  if(temperature >= 80) {
+    rampDuty = 100;
+    lastRampTime = now;
+    writeFanDuty(100);
+    return;
+  }
+  if(rampDuty == 0) {
+    rampDuty = startupDutyPercent;
+    fanStartTime = now;
+    lastRampTime = now;
+    writeFanDuty(startupDutyPercent);
+    return;
+  }
+  uint32_t elapsed = uint32_t(now - lastRampTime);
+  if(elapsed < rampIntervalMs) return;
+  lastRampTime = now;
+  float target = quietDuty(temperature);
+  if(uint32_t(now - fanStartTime) < startupHoldMs && target < startupDutyPercent) target = startupDutyPercent;
+  float difference = target - rampDuty;
+  if(fabsf(difference) < 2.0f) return;
+  // 长时间阻塞后也不一次跳过整个渐变过程。
+  float seconds = (elapsed > 250 ? 250 : elapsed) / 1000.0f;
+  float step = (difference > 0 ? risePercentPerSecond : fallPercentPerSecond) * seconds;
+  if(difference > 0) rampDuty += difference < step ? difference : step;
+  else rampDuty -= -difference < step ? -difference : step;
+  writeFanDuty(static_cast<int>(roundf(rampDuty)));
 }
 
 void parseLine() {
