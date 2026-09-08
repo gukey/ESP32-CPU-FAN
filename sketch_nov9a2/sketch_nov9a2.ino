@@ -242,7 +242,7 @@ void updateDisplay(uint32_t now) {
   if(countdownActive) {
     // 默认字体 6x8，放大 8 倍后贴近屏幕上下边缘并水平居中。
     display.setTextSize(8);
-    display.setCursor(40, 0);
+    display.setCursor(40, 4);
     display.print(3 - static_cast<int>(countdownElapsed / 1000));
     display.display();
     return;

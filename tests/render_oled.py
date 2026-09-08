@@ -42,7 +42,7 @@ def render_countdown(value):
     draw = ImageDraw.Draw(canvas)
     value = str(value)
     for char_index, char in enumerate(value):
-        x, y, size = 40 + char_index * 6 * 8, 0, 8
+        x, y, size = 40 + char_index * 6 * 8, 4, 8
         assert x + 5 * size <= 128 and y + 7 * size <= 64
         for col in range(5):
             bits = font[ord(char) * 5 + col]
