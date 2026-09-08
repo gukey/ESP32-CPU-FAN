@@ -117,6 +117,7 @@ ESP32 收到有效数据后回复 `ACK`。默认串口速率为 115200。
 - [OLED 正常布局预览](docs/oled-preview.png)
 - [OLED 高温/满速布局预览](docs/oled-preview-max.png)
 - [OLED 温度缺失布局预览](docs/oled-preview-missing.png)
+- [OLED 3 秒倒计时预览](docs/oled-preview-countdown.png)
 
 ## 注意事项
 

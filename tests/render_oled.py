@@ -37,8 +37,24 @@ def render(cpu, gpu, duty):
     text('QUIET', 96, 55)
     return canvas
 
+def render_countdown(value):
+    canvas = Image.new('RGB', (128, 64), 'black')
+    draw = ImageDraw.Draw(canvas)
+    value = str(value)
+    for char_index, char in enumerate(value):
+        x, y, size = 43 + char_index * 6 * 7, 4, 7
+        assert x + 5 * size <= 128 and y + 7 * size <= 64
+        for col in range(5):
+            bits = font[ord(char) * 5 + col]
+            for row in range(8):
+                if bits & (1 << row):
+                    draw.rectangle((x + col*size, y + row*size,
+                                    x + (col+1)*size-1, y + (row+1)*size-1), fill='white')
+    return canvas
+
 args.output.parent.mkdir(parents=True, exist_ok=True)
 for suffix, values in [('', (70, 68, 40)), ('-max', (120, 100, 100)), ('-missing', (None, 60, 23))]:
     screen = render(*values)
     screen.resize((1024, 512), Image.Resampling.NEAREST).save(args.output.with_name(args.output.stem + suffix + '.png'))
+render_countdown(3).resize((1024, 512), Image.Resampling.NEAREST).save(args.output.with_name(args.output.stem + '-countdown.png'))
 print('已生成正常、三位数和缺失温度预览，像素边界检查通过。')

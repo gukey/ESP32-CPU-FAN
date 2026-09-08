@@ -240,9 +240,9 @@ void updateDisplay(uint32_t now) {
   if(!displayOn) return;
   display.clearDisplay();
   if(countdownActive) {
-    // 默认字体 6x8，放大 6 倍后在 128x64 屏幕居中显示。
-    display.setTextSize(6);
-    display.setCursor(46, 8);
+    // 默认字体 6x8，放大 7 倍后占满屏幕高度并居中显示。
+    display.setTextSize(7);
+    display.setCursor(43, 4);
     display.print(3 - static_cast<int>(countdownElapsed / 1000));
     display.display();
     return;

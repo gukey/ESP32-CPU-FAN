@@ -35,4 +35,4 @@ python -m ziglang c++ -std=c++17 -I tests/firmware_stubs tests/firmware_test.cpp
 python tests/render_oled.py
 ```
 
-输出文件为 `docs/oled-preview.png`、`docs/oled-preview-max.png` 和 `docs/oled-preview-missing.png`。预览仅用于核对排版，不代表实时硬件读数。
+输出文件为 `docs/oled-preview.png`、`docs/oled-preview-max.png`、`docs/oled-preview-missing.png` 和 `docs/oled-preview-countdown.png`。预览仅用于核对排版，不代表实时硬件读数。

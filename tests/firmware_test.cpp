@@ -52,7 +52,7 @@ int main(){
  SerialBT.client=false;loop();assert(dutyCycle==0 && rampDuty==0);
  // 关屏 3、2、1：倒计时期间风扇一直为零；新数据能立即取消。
  displayReady=true;SerialBT.client=true;send("CPU65\n");
- SerialBT.client=false;loop();assert(countdownActive && dutyCycle==0 && display.lastNumber==3);
+SerialBT.client=false;loop();assert(countdownActive && dutyCycle==0 && display.lastNumber==3 && display.textSize==7);
  uint32_t start=countdownStartTime;
  testTime=start+1000;loop();assert(display.lastNumber==2 && dutyCycle==0);
  testTime=start+2000;loop();assert(display.lastNumber==1 && dutyCycle==0);
