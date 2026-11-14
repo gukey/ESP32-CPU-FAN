@@ -42,6 +42,7 @@ float gpuValue = 0;
 uint32_t cpuTime = 0;
 uint32_t gpuTime = 0;
 uint32_t lastDataTime = 0;
+uint32_t lastLinkTime = 0;
 uint32_t lastDisplayTime = 0;
 int dutyCycle = 0;
 int frequencyHz = 15000;
@@ -157,6 +158,19 @@ void updateFan(uint32_t now) {
 
 void parseLine() {
   receiveBuffer[receiveLength] = '\0';
+  // 心跳只确认蓝牙通道，不刷新温度时间、不启动风扇。
+  if(receiveLength > 5 && receiveLength <= 15 && strncmp(receiveBuffer, "PING:", 5) == 0 && SerialBT.hasClient()) {
+    for(size_t i = 5; i < receiveLength; ++i) {
+      if(receiveBuffer[i] < '0' || receiveBuffer[i] > '9') return;
+    }
+    connected = true;
+    lastLinkTime = millis();
+    recoveryArmed = true;
+    char response[24];
+    snprintf(response, sizeof(response), "PONG:%s", receiveBuffer + 5);
+    SerialBT.println(response);
+    return;
+  }
   bool isCpu = strncmp(receiveBuffer, "CPU", 3) == 0;
   bool isGpu = strncmp(receiveBuffer, "GPU", 3) == 0;
   if(receiveLength <= 3 || (!isCpu && !isGpu) || !SerialBT.hasClient()) return;
@@ -169,6 +183,7 @@ void parseLine() {
   else { gpuValue = value; gpuTime = now; gpuValid = true; }
   connected = true;
   lastDataTime = now;
+  lastLinkTime = now;
   dataValid = true;
   if(countdownActive) lastDisplayTime = now - 200;
   countdownActive = false;
@@ -201,7 +216,7 @@ void receiveData() {
 }
 
 void recoverBluetooth(uint32_t now) {
-  if(!connected || !recoveryArmed || uint32_t(now - lastDataTime) < recoveryTimeoutMs) return;
+  if(!connected || !recoveryArmed || uint32_t(now - lastLinkTime) < recoveryTimeoutMs) return;
   // 一个有效通信周期只恢复一次；断开/休眠后静候 PC 连接，不周期性重启。
   recoveryArmed = false;
   stopFan();
@@ -268,6 +283,7 @@ void setup() {
   pinMode(fanPin, OUTPUT);
   digitalWrite(fanPin, LOW);
   Serial.begin(115200);
+  Serial.println("ESP32 FAN LINK 1.1; data=Bluetooth; heartbeat=PING/PONG; curve=Quiet");
   // 仅读取旧 EEPROM 保存的 PWM 频率，不再写入按键/曲线配置。
   if(EEPROM.begin(8)) {
     if(EEPROM.read(6) == 201) {

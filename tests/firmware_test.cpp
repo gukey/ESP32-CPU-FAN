@@ -66,5 +66,20 @@ SerialBT.client=false;loop();assert(countdownActive && dutyCycle==0 && display.l
  testTime=uint32_t(countdownStartTime+2000);loop();assert(display.lastNumber==1);
  testTime=uint32_t(countdownStartTime+3000);loop();assert(!displayOn);
  assert(feeds>0);
+ // 独立心跳不能充当有效温度，空闲和温度过期仍遵循原风扇逻辑。
+ displayReady=false;SerialBT.client=true;
+ send("PING:12345\n");
+ assert(SerialBT.lastReply=="PONG:12345" && dutyCycle==0 && !dataValid);
+ int begins=SerialBT.begins;
+ for(int i=0;i<40;++i){testTime+=2000;send("PING:42\n");}
+ assert(SerialBT.begins==begins && dutyCycle==0 && !cpuValid && !gpuValid);
+ send("CPU80\n");assert(dutyCycle==100);
+ uint32_t sampled=cpuTime;
+ testTime=sampled+12000;send("PING:43\n");
+ assert(dutyCycle==0 && !cpuValid && SerialBT.lastReply=="PONG:43");
+ ack=SerialBT.acks;send("PING:x\nPING:\n");assert(SerialBT.acks==ack);
+ // 心跳计时同样允许 millis 回绕。
+ testTime=0xfffffff0u;send("PING:99\n");testTime=20;loop();
+ assert(SerialBT.begins==begins && dutyCycle==0);
  std::cout<<"PASS: startup, parsing, reconnect, sleep, rollover, expiry, one-shot recovery, OLED failure\n";
 }

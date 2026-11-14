@@ -7,11 +7,12 @@ class BluetoothSerial {
 public:
  bool client=false, beginResult=true;
  int begins=0, acks=0;
+ std::string lastReply;
  std::deque<char> rx;
  bool hasClient(){return client;}
  int available(){return int(rx.size());}
  int read(){if(rx.empty())return -1; ++testTime; char c=rx.front();rx.pop_front();return static_cast<unsigned char>(c);}
- void println(const char*){++acks;}
+ void println(const char* text){++acks;lastReply=text;}
  bool begin(const char*){++begins;return beginResult;}
  void end(){client=false;rx.clear();}
  void register_callback(void (*)(esp_spp_cb_event_t,esp_spp_cb_param_t*)){}
